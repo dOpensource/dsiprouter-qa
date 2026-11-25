@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<!DOCTYPE scenario SYSTEM "sipp.dtd">
+
+<!--
+  Softphone emulation for dSIPRouter QA:
+    REGISTER (digest auth) -> INVITE (digest auth) -> ANY final response.
+    2xx: hold for -d then BYE.  3xx-6xx: ACK and stop. Used when the test checks where
+    dSIPRouter sent the call (server-side capture) or which error it returned.
+
+  Injection file (-inf) fields, one line:  user;password;domain
+    field0 = SIP username, field1 = unused, field2 = auth domain (From/To host)
+  Digest credentials come from -au/-ap: SIPp 3.7 does not expand [fieldN]
+  inside [authentication ...] and sends garbage (with the password) instead.
+  The dialed number is the SIPp service (-s), the proxy is the remote host.
+  SIPp only matches replies whose Call-ID is [call_id], so the REGISTER and the
+  call share one Call-ID; CSeq keeps increasing across them (REGISTER 1-2, dialog 3-5).
+  Hold time comes from -d (pause with no milliseconds uses -d).
+-->
+
+<scenario name="dsip register + call attempt">
+
+  <!-- REGISTER, expect a digest challenge -->
+  <send retrans="500">
+    <![CDATA[
+      REGISTER sip:[field2] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      From: <sip:[field0]@[field2]>;tag=[pid]SIPpTag00[call_number]
+      To: <sip:[field0]@[field2]>
+      Call-ID: [call_id]
+      CSeq: 1 REGISTER
+      Contact: <sip:[field0]@[local_ip]:[local_port];transport=[transport]>
+      Max-Forwards: 70
+      Expires: 120
+      User-Agent: dsiprouter-qa-sipp
+      Content-Length: 0
+
+    ]]>
+  </send>
+
+  <recv response="100" optional="true"/>
+  <recv response="401" auth="true" optional="true" next="reg_auth"/>
+  <recv response="407" auth="true" next="reg_auth"/>
+
+  <label id="reg_auth"/>
+  <send retrans="500">
+    <![CDATA[
+      REGISTER sip:[field2] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      From: <sip:[field0]@[field2]>;tag=[pid]SIPpTag00[call_number]
+      To: <sip:[field0]@[field2]>
+      Call-ID: [call_id]
+      CSeq: 2 REGISTER
+      Contact: <sip:[field0]@[local_ip]:[local_port];transport=[transport]>
+      [authentication]
+      Max-Forwards: 70
+      Expires: 120
+      User-Agent: dsiprouter-qa-sipp
+      Content-Length: 0
+
+    ]]>
+  </send>
+
+  <recv response="100" optional="true"/>
+  <recv response="200" rtd="true"/>
+
+  <!-- INVITE, expect a proxy challenge -->
+  <send retrans="500">
+    <![CDATA[
+      INVITE sip:[service]@[field2] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      From: <sip:[field0]@[field2]>;tag=[pid]SIPpTag01[call_number]
+      To: <sip:[service]@[field2]>
+      Call-ID: [call_id]
+      CSeq: 3 INVITE
+      Contact: <sip:[field0]@[local_ip]:[local_port];transport=[transport]>
+      Max-Forwards: 70
+      User-Agent: dsiprouter-qa-sipp
+      Content-Type: application/sdp
+      Content-Length: [len]
+
+      v=0
+      o=sipp 53655765 2353687637 IN IP[local_ip_type] [local_ip]
+      s=-
+      c=IN IP[media_ip_type] [media_ip]
+      t=0 0
+      m=audio [media_port] RTP/AVP 0 8 101
+      a=rtpmap:0 PCMU/8000
+      a=rtpmap:8 PCMA/8000
+      a=rtpmap:101 telephone-event/8000
+      a=fmtp:101 0-15
+      a=sendrecv
+
+    ]]>
+  </send>
+
+  <recv response="100" optional="true"/>
+  <recv response="407" auth="true" optional="true" next="inv_ack"/>
+  <recv response="401" auth="true" next="inv_ack"/>
+
+  <label id="inv_ack"/>
+  <send>
+    <![CDATA[
+      ACK sip:[service]@[field2] SIP/2.0
+      [last_Via:]
+      From: <sip:[field0]@[field2]>;tag=[pid]SIPpTag01[call_number]
+      [last_To:]
+      Call-ID: [call_id]
+      CSeq: 3 ACK
+      Max-Forwards: 70
+      Content-Length: 0
+
+    ]]>
+  </send>
+
+  <send retrans="500">
+    <![CDATA[
+      INVITE sip:[service]@[field2] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      From: <sip:[field0]@[field2]>;tag=[pid]SIPpTag01[call_number]
+      To: <sip:[service]@[field2]>
+      Call-ID: [call_id]
+      CSeq: 4 INVITE
+      Contact: <sip:[field0]@[local_ip]:[local_port];transport=[transport]>
+      [authentication]
+      Max-Forwards: 70
+      User-Agent: dsiprouter-qa-sipp
+      Content-Type: application/sdp
+      Content-Length: [len]
+
+      v=0
+      o=sipp 53655765 2353687638 IN IP[local_ip_type] [local_ip]
+      s=-
+      c=IN IP[media_ip_type] [media_ip]
+      t=0 0
+      m=audio [media_port] RTP/AVP 0 8 101
+      a=rtpmap:0 PCMU/8000
+      a=rtpmap:8 PCMA/8000
+      a=rtpmap:101 telephone-event/8000
+      a=fmtp:101 0-15
+      a=sendrecv
+
+    ]]>
+  </send>
+
+  <recv response="100" optional="true"/>
+  <recv response="180" optional="true"/>
+  <recv response="183" optional="true"/>
+  <recv response="200" optional="true" rrs="true" next="answered"/>
+  <recv response="403" optional="true" next="failed"/>
+  <recv response="404" optional="true" next="failed"/>
+  <recv response="408" optional="true" next="failed"/>
+  <recv response="480" optional="true" next="failed"/>
+  <recv response="486" optional="true" next="failed"/>
+  <recv response="487" optional="true" next="failed"/>
+  <recv response="488" optional="true" next="failed"/>
+  <recv response="500" optional="true" next="failed"/>
+  <recv response="502" optional="true" next="failed"/>
+  <recv response="503" optional="true" next="failed"/>
+  <recv response="504" optional="true" next="failed"/>
+  <recv response="603" next="failed"/>
+
+  <label id="failed"/>
+  <send next="done">
+    <![CDATA[
+      ACK sip:[service]@[field2] SIP/2.0
+      [last_Via:]
+      From: <sip:[field0]@[field2]>;tag=[pid]SIPpTag01[call_number]
+      [last_To:]
+      Call-ID: [call_id]
+      CSeq: 4 ACK
+      Max-Forwards: 70
+      Content-Length: 0
+
+    ]]>
+  </send>
+
+  <label id="answered"/>
+
+  <send>
+    <![CDATA[
+      ACK [next_url] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      [routes]
+      From: <sip:[field0]@[field2]>;tag=[pid]SIPpTag01[call_number]
+      [last_To:]
+      Call-ID: [call_id]
+      CSeq: 4 ACK
+      Contact: <sip:[field0]@[local_ip]:[local_port];transport=[transport]>
+      Max-Forwards: 70
+      Content-Length: 0
+
+    ]]>
+  </send>
+
+  <!-- hold the answered call (duration from -d) -->
+  <pause/>
+
+  <send retrans="500">
+    <![CDATA[
+      BYE [next_url] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      [routes]
+      From: <sip:[field0]@[field2]>;tag=[pid]SIPpTag01[call_number]
+      [last_To:]
+      Call-ID: [call_id]
+      CSeq: 5 BYE
+      Contact: <sip:[field0]@[local_ip]:[local_port];transport=[transport]>
+      Max-Forwards: 70
+      Content-Length: 0
+
+    ]]>
+  </send>
+
+  <recv response="200" crlf="true"/>
+
+  <label id="done"/>
+
+  <ResponseTimeRepartition value="100, 500, 1000, 5000, 10000"/>
+  <CallLengthRepartition value="1000, 10000, 30000"/>
+
+</scenario>

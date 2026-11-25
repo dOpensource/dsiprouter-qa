@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<!DOCTYPE scenario SYSTEM "sipp.dtd">
+
+<!--
+  Inbound call from a "carrier" for dSIPRouter QA:
+    INVITE (no auth: dSIPRouter trusts the source IP, which the test adds to an
+    IP-auth carrier group) -> ANY final response.
+    2xx: hold for -d, then BYE.  3xx-6xx: ACK and stop.
+
+  The dialed DID is the SIPp service (-s). The From user is fixed to a
+  plausible caller ID. ;rport in Via lets Kamailio answer through NAT when the
+  runner is behind one (a laptop); a Jenkins host with a public IP doesn't need it.
+  Run several calls at once with -m N -l N -r N (load-balancing test).
+-->
+
+<scenario name="dsip carrier inbound invite">
+
+  <send retrans="500">
+    <![CDATA[
+      INVITE sip:[service]@[remote_ip]:[remote_port] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch];rport
+      From: <sip:13135550123@[local_ip]>;tag=[pid]SIPpTag02[call_number]
+      To: <sip:[service]@[remote_ip]>
+      Call-ID: [call_id]
+      CSeq: 1 INVITE
+      Contact: <sip:13135550123@[local_ip]:[local_port];transport=[transport]>
+      Max-Forwards: 70
+      User-Agent: dsiprouter-qa-carrier
+      Content-Type: application/sdp
+      Content-Length: [len]
+
+      v=0
+      o=sipp 53655765 2353687637 IN IP[local_ip_type] [local_ip]
+      s=-
+      c=IN IP[media_ip_type] [media_ip]
+      t=0 0
+      m=audio [media_port] RTP/AVP 0 8 101
+      a=rtpmap:0 PCMU/8000
+      a=rtpmap:8 PCMA/8000
+      a=rtpmap:101 telephone-event/8000
+      a=fmtp:101 0-15
+      a=sendrecv
+
+    ]]>
+  </send>
+
+  <recv response="100" optional="true"/>
+  <recv response="180" optional="true"/>
+  <recv response="183" optional="true"/>
+  <recv response="200" optional="true" rrs="true" next="answered"/>
+  <recv response="403" optional="true" next="failed"/>
+  <recv response="404" optional="true" next="failed"/>
+  <recv response="408" optional="true" next="failed"/>
+  <recv response="480" optional="true" next="failed"/>
+  <recv response="486" optional="true" next="failed"/>
+  <recv response="487" optional="true" next="failed"/>
+  <recv response="488" optional="true" next="failed"/>
+  <recv response="500" optional="true" next="failed"/>
+  <recv response="502" optional="true" next="failed"/>
+  <recv response="503" optional="true" next="failed"/>
+  <recv response="504" optional="true" next="failed"/>
+  <recv response="603" next="failed"/>
+
+  <label id="failed"/>
+  <send next="done">
+    <![CDATA[
+      ACK sip:[service]@[remote_ip]:[remote_port] SIP/2.0
+      [last_Via:]
+      From: <sip:13135550123@[local_ip]>;tag=[pid]SIPpTag02[call_number]
+      [last_To:]
+      Call-ID: [call_id]
+      CSeq: 1 ACK
+      Max-Forwards: 70
+      Content-Length: 0
+
+    ]]>
+  </send>
+
+  <label id="answered"/>
+  <send>
+    <![CDATA[
+      ACK [next_url] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch];rport
+      [routes]
+      From: <sip:13135550123@[local_ip]>;tag=[pid]SIPpTag02[call_number]
+      [last_To:]
+      Call-ID: [call_id]
+      CSeq: 1 ACK
+      Contact: <sip:13135550123@[local_ip]:[local_port];transport=[transport]>
+      Max-Forwards: 70
+      Content-Length: 0
+
+    ]]>
+  </send>
+
+  <pause/>
+
+  <send retrans="500">
+    <![CDATA[
+      BYE [next_url] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch];rport
+      [routes]
+      From: <sip:13135550123@[local_ip]>;tag=[pid]SIPpTag02[call_number]
+      [last_To:]
+      Call-ID: [call_id]
+      CSeq: 2 BYE
+      Max-Forwards: 70
+      Content-Length: 0
+
+    ]]>
+  </send>
+
+  <recv response="200" crlf="true"/>
+
+  <label id="done"/>
+
+</scenario>
