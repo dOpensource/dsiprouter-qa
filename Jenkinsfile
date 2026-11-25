@@ -4,7 +4,8 @@
 // Jenkins credentials used (create these before the first run):
 //   dsip-qa-gui        Username with password  GUI login on the QA box (admin / ...)
 //   dsip-qa-ssh        SSH username with private key  root access to the QA box (CLI tests, packet capture)
-//   omnibot-google-sa  Secret file             omnibot service-account JSON key (sheet editor)
+//   omnibot-google-sa  Secret file             omnibot sign-in file from tools/google_login.py (or a
+//                                              service-account key); the sheet is shared with it as editor
 // Optional, not bound yet: signalwire-sip (ROUTE-002), DSIP_LICENSE_KEY_ALL_MODULES (LIC-001 / API-001, next batch).
 //
 // The agent needs python3-venv and sipp (Debian: apt install python3-venv sip-tester), and its

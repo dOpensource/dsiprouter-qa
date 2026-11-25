@@ -2,3 +2,5 @@
 results/
 __pycache__/
 *.pyc
+client_secret*.json
+omnibot-google*.json

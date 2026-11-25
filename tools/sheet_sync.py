@@ -12,8 +12,11 @@
       automated tests. Rows that aren't automated keep whatever a tester already typed
       into Result and Notes, so re-running a release doesn't wipe manual results.
 
-Auth: a Google service account key (the omnibot account) in GOOGLE_APPLICATION_CREDENTIALS.
-The sheet must be shared with that account as an editor.
+Auth: GOOGLE_APPLICATION_CREDENTIALS points at either
+  - an authorized-user file for the omnibot Google user (made once with
+    tools/google_login.py; holds a refresh token), or
+  - a service-account JSON key.
+Whichever account it is, the sheet must be shared with it as an editor.
 """
 import argparse
 import glob
@@ -29,15 +32,28 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HEADER = ["TestID", "Test", "Automation", "Result", "Details", "Duration (s)", "Run at", "Build", "Notes"]
 
 
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+
+
+def credentials(path):
+    """Load a service-account key or an authorized-user (refresh token) file."""
+    with open(path) as f:
+        kind = json.load(f).get("type")
+    if kind == "service_account":
+        from google.oauth2 import service_account
+        return service_account.Credentials.from_service_account_file(path, scopes=SCOPES)
+    if kind == "authorized_user":
+        from google.oauth2.credentials import Credentials
+        return Credentials.from_authorized_user_file(path, scopes=SCOPES)
+    sys.exit("{}: unknown credential type {!r} (expected service_account or authorized_user)".format(path, kind))
+
+
 def service():
-    from google.oauth2 import service_account
     from googleapiclient.discovery import build
-    key = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-    if not key:
-        sys.exit("GOOGLE_APPLICATION_CREDENTIALS is not set (path to the omnibot service-account key)")
-    creds = service_account.Credentials.from_service_account_file(
-        key, scopes=["https://www.googleapis.com/auth/spreadsheets"])
-    return build("sheets", "v4", credentials=creds, cache_discovery=False).spreadsheets()
+    path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+    if not path:
+        sys.exit("GOOGLE_APPLICATION_CREDENTIALS is not set (path to the omnibot credential file)")
+    return build("sheets", "v4", credentials=credentials(path), cache_discovery=False).spreadsheets()
 
 
 def plan_cases(sheets, sheet_id):

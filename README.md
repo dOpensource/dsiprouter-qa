@@ -75,11 +75,24 @@ The job is a Pipeline from SCM with this repo's `Jenkinsfile`. Before the first 
 |---|---|---|
 | `dsip-qa-gui` | Username with password | QA GUI admin login |
 | `dsip-qa-ssh` | SSH username with private key | root on the QA box |
-| `omnibot-google-sa` | Secret file | omnibot service-account JSON key; the sheet must be shared with it as an editor |
+| `omnibot-google-sa` | Secret file | omnibot sign-in file made with `tools/google_login.py` (see below); the sheet must be shared with omnibot as an editor |
 
 3. QA box prerequisites:
    - `tcpdump` is installed.
    - Its public IP is on the Flowroute test account's ACL with tech prefix `16723617` (plan step ROUTE-001.1).
+
+#### Making the omnibot sign-in file (one time)
+
+omnibot is an ordinary Google user, so the job signs in with a saved refresh token instead of a key:
+
+1. In a Google Cloud project, open **APIs & Services**. Enable the **Google Sheets API**, and set the **OAuth consent screen** to user type **Internal**. In "Testing" mode, tokens expire after 7 days.
+2. Go to **Credentials → Create credentials → OAuth client ID → Desktop app**, and download the JSON (`client_secret.json`).
+3. `.venv/bin/pip install google-auth-oauthlib && .venv/bin/python tools/google_login.py --client client_secret.json --out omnibot-google.json`. When the browser opens, sign in as omnibot.
+4. Upload `omnibot-google.json` to Jenkins as the secret file `omnibot-google-sa`, then delete both JSON files locally.
+
+The token stops working if omnibot's password changes or its access to the app is removed. Re-run step 3 if that happens.
+
+`sheet_sync.py` also accepts a service-account key in the same credential slot.
 
 Parameters:
 - `RELEASE`: names the results tab. If blank, the version is read from the QA box.
