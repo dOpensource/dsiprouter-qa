@@ -56,11 +56,21 @@ def agent_ip(cfg, qa):
 
 
 @pytest.fixture(scope="session")
-def gui_session(cfg):
+def gui_session(cfg, qa):
     g = DsipGui(cfg.host, cfg.gui_user, cfg.gui_password, port=cfg.gui_port, insecure=cfg.tls_insecure)
     g.login()
-    sweep_leftovers(g)
+    sweep_leftovers(g, qa)
     return g
+
+
+def pytest_sessionstart(session):
+    # Jenkins "Abort" sends SIGTERM. Turn it into KeyboardInterrupt so pytest unwinds and
+    # each test's undo stack still runs, instead of dying with QA half-changed.
+    import signal
+
+    def _term(signum, frame):
+        raise KeyboardInterrupt("SIGTERM (build aborted)")
+    signal.signal(signal.SIGTERM, _term)
 
 
 @pytest.fixture
@@ -88,9 +98,41 @@ def outdir(cfg, request):
     return d
 
 
-def sweep_leftovers(gui):
-    """Remove objects named QA-AUTO* left by a crashed run. Never touches anything else."""
+DEFAULT_ROUTE_STATE = "/var/lib/dsipqa/default_outbound.json"
+
+
+def sweep_leftovers(gui, qa):
+    """Undo what a killed run left behind, before any test starts:
+
+    - the Default Outbound Route: QA's real setting is saved on the QA box the first time
+      it's seen in a clean state; if a killed test left the route pointing at a QA-AUTO
+      group (or deleted it), it's put back from that file
+    - objects named QA-AUTO*, and stray packet captures
+    Never touches anything else.
+    """
     removed = []
+    ours = {str(g["gwgroupid"]) for g in gui.carrier_groups() if str(g.get("name") or "").startswith(PREFIX)}
+    route = gui.default_outbound_route()
+    current_gw = str(route.get("gwgroupid")).lstrip("#") if route else None
+    rc, saved, _ = qa.run("cat {} 2>/dev/null".format(DEFAULT_ROUTE_STATE), check=False)
+    saved = json.loads(saved) if rc == 0 and saved.strip() else None
+    if route and current_gw not in ours:
+        # clean state: remember it (also refreshes it if someone changed QA's default on purpose)
+        state = {"gwgroupid": current_gw, "name": route.get("name") or "Default Outbound Route"}
+        if state != saved:
+            qa.run("mkdir -p {} && cat > {}".format(os.path.dirname(DEFAULT_ROUTE_STATE), DEFAULT_ROUTE_STATE),
+                   stdin=json.dumps(state))
+    elif saved:
+        if route:
+            gui.set_outbound_route(route["ruleid"], saved["gwgroupid"], saved["name"])
+        else:
+            gui.set_outbound_route("", saved["gwgroupid"], saved["name"])
+        removed.append("default outbound route restored -> {}".format(saved["gwgroupid"]))
+    elif route is None or current_gw in ours:
+        raise RuntimeError("Default Outbound Route is {} and there's no saved original in {} on QA; "
+                           "fix it in the GUI before running the suite".format(
+                               "missing" if route is None else "pointing at a test group", DEFAULT_ROUTE_STATE))
+    qa.run("pkill -f 'tcpdump .*dst host 192\\.0\\.2\\.' ; rm -f /tmp/dsipqa-cap-*.txt", check=False)
     for r in gui.inbound_routes():
         if r.get("rulename", "").startswith(PREFIX):
             gui.delete_inbound_route(r)
