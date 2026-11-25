@@ -32,17 +32,25 @@ def make_ip_endpoint_group(gui, undo, label, hosts):
 
 
 def swap_default_outbound_route(gui, undo, gwgroupid):
-    """Point the Default Outbound Route at gwgroupid; restore it afterwards."""
+    """Point the Default Outbound Route at gwgroupid; restore it afterwards.
+    If QA has no default route (fresh install), create one and delete it afterwards."""
     orig = gui.default_outbound_route()
     if orig is None:
-        raise AssertionError("QA has no Default Outbound Route (groupid 8000, empty prefix)")
-    orig_gw = str(orig.get("gwgroupid")).lstrip("#")
-    orig_name = orig.get("name") or "Default Outbound Route"
-    gui.set_outbound_route(orig["ruleid"], gwgroupid, orig_name)
-    undo.push("restore default outbound route -> {}".format(orig_gw),
-              lambda: gui.set_outbound_route(orig["ruleid"], orig_gw, orig_name))
+        gui.set_outbound_route("", gwgroupid, "Default Outbound Route")
+
+        def drop():
+            r = gui.default_outbound_route()
+            if r:
+                gui.delete_outbound_route(r["ruleid"])
+        undo.push("delete temporary default outbound route", drop)
+    else:
+        orig_gw = str(orig.get("gwgroupid")).lstrip("#")
+        orig_name = orig.get("name") or "Default Outbound Route"
+        gui.set_outbound_route(orig["ruleid"], gwgroupid, orig_name)
+        undo.push("restore default outbound route -> {}".format(orig_gw),
+                  lambda: gui.set_outbound_route(orig["ruleid"], orig_gw, orig_name))
     now = gui.default_outbound_route()
-    assert str(now.get("gwgroupid")).lstrip("#") == str(gwgroupid), "default route did not change"
+    assert now and str(now.get("gwgroupid")).lstrip("#") == str(gwgroupid), "default route did not change"
     return orig
 
 

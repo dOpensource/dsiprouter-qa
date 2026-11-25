@@ -17,15 +17,20 @@ class SshError(RuntimeError):
 
 
 class QaHost:
-    def __init__(self, host, user="root", key=None, connect_timeout=15):
+    def __init__(self, host, user="root", key=None, connect_timeout=15, known_hosts=None):
         self.host = host
         self.user = user
         self.key = key
         self.connect_timeout = connect_timeout
+        # QA is rebuilt often, which changes its host key; a per-run known_hosts file
+        # (accept-new) avoids "REMOTE HOST IDENTIFICATION HAS CHANGED" after each rebuild
+        self.known_hosts = known_hosts
 
     def _ssh_cmd(self):
         cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout={}".format(self.connect_timeout),
                "-o", "StrictHostKeyChecking=accept-new", "-o", "ServerAliveInterval=15"]
+        if self.known_hosts:
+            cmd += ["-o", "UserKnownHostsFile={}".format(self.known_hosts)]
         if self.key:
             cmd += ["-i", self.key, "-o", "IdentitiesOnly=yes"]
         return cmd + ["{}@{}".format(self.user, self.host)]

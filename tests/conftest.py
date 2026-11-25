@@ -32,7 +32,7 @@ def cfg():
 
 @pytest.fixture(scope="session")
 def qa(cfg):
-    return QaHost(cfg.host, cfg.ssh_user, cfg.ssh_key)
+    return QaHost(cfg.host, cfg.ssh_user, cfg.ssh_key, known_hosts=os.path.join(cfg.outdir, "known_hosts"))
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -116,22 +116,30 @@ def sweep_leftovers(gui, qa):
     current_gw = str(route.get("gwgroupid")).lstrip("#") if route else None
     rc, saved, _ = qa.run("cat {} 2>/dev/null".format(DEFAULT_ROUTE_STATE), check=False)
     saved = json.loads(saved) if rc == 0 and saved.strip() else None
-    if route and current_gw not in ours:
-        # clean state: remember it (also refreshes it if someone changed QA's default on purpose)
-        state = {"gwgroupid": current_gw, "name": route.get("name") or "Default Outbound Route"}
+    real_groups = {str(g["gwgroupid"]) for g in gui.carrier_groups()} - ours
+    if route is None and saved and saved.get("gwgroupid") in real_groups:
+        # a killed ROUTE-003/009 deleted the default route; put it back
+        gui.set_outbound_route("", saved["gwgroupid"], saved["name"])
+        removed.append("default outbound route re-created -> {}".format(saved["gwgroupid"]))
+    elif current_gw not in ours:
+        # clean state (a route to a real carrier, or no default route at all on a fresh install):
+        # remember it; this also picks up a deliberate change someone made to QA's default
+        state = ({"gwgroupid": current_gw, "name": route.get("name") or "Default Outbound Route"}
+                 if route else {"gwgroupid": None, "name": None})
         if state != saved:
             qa.run("mkdir -p {} && cat > {}".format(os.path.dirname(DEFAULT_ROUTE_STATE), DEFAULT_ROUTE_STATE),
                    stdin=json.dumps(state))
     elif saved:
-        if route:
-            gui.set_outbound_route(route["ruleid"], saved["gwgroupid"], saved["name"])
+        # a killed test left the default route pointing at one of our groups
+        if saved["gwgroupid"] is None:
+            gui.delete_outbound_route(route["ruleid"])
+            removed.append("temporary default outbound route deleted")
         else:
-            gui.set_outbound_route("", saved["gwgroupid"], saved["name"])
-        removed.append("default outbound route restored -> {}".format(saved["gwgroupid"]))
-    elif route is None or current_gw in ours:
-        raise RuntimeError("Default Outbound Route is {} and there's no saved original in {} on QA; "
-                           "fix it in the GUI before running the suite".format(
-                               "missing" if route is None else "pointing at a test group", DEFAULT_ROUTE_STATE))
+            gui.set_outbound_route(route["ruleid"], saved["gwgroupid"], saved["name"])
+            removed.append("default outbound route restored -> {}".format(saved["gwgroupid"]))
+    else:
+        raise RuntimeError("Default Outbound Route points at a test group and there's no saved original in "
+                           "{} on QA; fix it in the GUI before running the suite".format(DEFAULT_ROUTE_STATE))
     qa.run("pkill -f 'tcpdump .*dst host 192\\.0\\.2\\.' ; rm -f /tmp/dsipqa-cap-*.txt", check=False)
     for r in gui.inbound_routes():
         if r.get("rulename", "").startswith(PREFIX):
