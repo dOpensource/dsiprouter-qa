@@ -54,6 +54,16 @@ class QaHost:
     def capture(self, hosts):
         return Capture(self, hosts)
 
+    def dispatcher_state(self, match="192.0.2."):
+        """{destination URI: dispatcher FLAGS} from `kamcmd dispatcher.list`, for URIs containing `match`.
+        FLAGS: A=active, I=inactive, D=disabled, P=probing, T=trying."""
+        text = self.out("kamcmd dispatcher.list 2>&1", check=False)
+        state = {}
+        for m in re.finditer(r"URI:\s*(\S+)\s+FLAGS:\s*(\S+)", text):
+            if match in m.group(1):
+                state[m.group(1)] = m.group(2)
+        return state
+
     def dsip_version(self):
         ver = self.out("grep -E '^VERSION' /etc/dsiprouter/gui/settings.py | cut -d= -f2 | tr -d \"' \"",
                        check=False)

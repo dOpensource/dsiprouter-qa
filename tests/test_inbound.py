@@ -97,12 +97,17 @@ def test_route_008_inbound_load_balancing(cfg, gui, qa, undo, outdir, agent_ip):
     make_carrier_group(gui, undo, "Inbound Carrier", [agent_ip])
     add_inbound_route(gui, undo, TEST_DID, epg, "Load Balance", lb=True)
     gui.reload_kamailio()
+    before = qa.dispatcher_state()
 
     with qa.capture([e1, e2]) as cap:
         r = carrier_call(cfg.host, TEST_DID, os.path.join(outdir, "sipp"), calls=10, rate=5,
                          local_port=cfg.sipp_port)
+    after = qa.dispatcher_state()
     _check_accepted(r, agent_ip)
     first = first_destination_per_call(cap.invites())
     split = collections.Counter(first.values())
-    assert len(first) >= 8, "only {} of 10 calls reached an endpoint ({})".format(len(first), dict(split))
-    assert split[e1] >= 2 and split[e2] >= 2, "calls not spread across both endpoints: {}".format(dict(split))
+    state = "dispatcher flags before calls {}, after {}".format(before, after)
+    print(state)
+    assert len(first) >= 8, "only {} of 10 calls reached an endpoint ({}); {}".format(len(first), dict(split), state)
+    assert split[e1] >= 2 and split[e2] >= 2, "calls not spread across both endpoints: {}; {}".format(
+        dict(split), state)

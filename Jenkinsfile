@@ -27,6 +27,7 @@ pipeline {
         booleanParam(name: 'TLS_INSECURE', defaultValue: false, description: 'Skip GUI certificate checks (needed if DSIP_HOST is an IP)')
         booleanParam(name: 'RUN_PSTN', defaultValue: true, description: 'Include tests that place real, billed PSTN calls (ROUTE-001, ROUTE-002)')
         booleanParam(name: 'RUN_CLI', defaultValue: true, description: 'Include CLI tests (restart dSIPRouter, reset and restore the admin password)')
+        string(name: 'PYTEST_K', defaultValue: '', description: 'Optional pytest -k filter to run only some tests, e.g. route_008')
         booleanParam(name: 'PUBLISH_TO_SHEET', defaultValue: true, description: 'Write results to the QA plan sheet')
     }
 
@@ -77,6 +78,7 @@ pipeline {
                         if (!params.RUN_PSTN) { skip << 'pstn' }
                         if (!params.RUN_CLI) { skip << 'disruptive' }
                         def marks = skip ? "-m 'not ${skip.join(' and not ')}'" : ''
+                        if (params.PYTEST_K?.trim()) { marks += " -k '${params.PYTEST_K.trim().replaceAll(/[^A-Za-z0-9_ ]/, '')}'" }
                         // routing first, CLI last (it restarts services); failures are reported by junit, not by exit code
                         sh """
                             .venv/bin/python -m pytest ${marks} -v -rA \
