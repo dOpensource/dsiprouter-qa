@@ -34,6 +34,7 @@ pipeline {
         QA_OUTDIR = "${WORKSPACE}/results"
         DSIP_HOST = "${params.DSIP_HOST}"
         DSIP_TLS_INSECURE = "${params.TLS_INSECURE ? '1' : '0'}"
+        DSIP_SSH_USER = 'root'
     }
 
     stages {
@@ -68,7 +69,8 @@ pipeline {
             steps {
                 withCredentials([
                     usernamePassword(credentialsId: 'dsip-qa-gui', usernameVariable: 'DSIP_GUI_USER', passwordVariable: 'DSIP_QA_PASSWORD'),
-                    sshUserPrivateKey(credentialsId: 'dsip-qa-ssh', keyFileVariable: 'DSIP_SSH_KEY', usernameVariable: 'DSIP_SSH_USER'),
+                    // only the key is taken from the credential; the tests always log in as DSIP_SSH_USER (root)
+                    sshUserPrivateKey(credentialsId: 'dsip-qa-ssh', keyFileVariable: 'DSIP_SSH_KEY'),
                 ]) {
                     script {
                         def skip = []
