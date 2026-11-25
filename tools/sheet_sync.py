@@ -38,14 +38,20 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 def credentials(path):
     """Load a service-account key or an authorized-user (refresh token) file."""
     with open(path) as f:
-        kind = json.load(f).get("type")
+        data = json.load(f)
+    kind = data.get("type")
     if kind == "service_account":
         from google.oauth2 import service_account
         return service_account.Credentials.from_service_account_file(path, scopes=SCOPES)
     if kind == "authorized_user":
         from google.oauth2.credentials import Credentials
         return Credentials.from_authorized_user_file(path, scopes=SCOPES)
-    sys.exit("{}: unknown credential type {!r} (expected service_account or authorized_user)".format(path, kind))
+    if "installed" in data or "web" in data:
+        sys.exit("The Google credential is an OAuth *client* file (client_secret_*.json), not the omnibot "
+                 "sign-in file. Run tools/google_login.py with it and store that output instead.")
+    sys.exit("The Google credential has unknown type {!r} (top-level keys: {}); expected a "
+             "service_account key or the authorized_user file from tools/google_login.py".format(
+                 kind, ", ".join(sorted(data))))
 
 
 def service():

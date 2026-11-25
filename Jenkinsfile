@@ -56,7 +56,8 @@ pipeline {
                         if (rc == 2) {
                             unstable('The sheet and the tests disagree (see MISSING TEST / UNKNOWN ID above)')
                         } else if (rc != 0) {
-                            error('sheet check failed')
+                            // a Google auth/API problem shouldn't stop the QA tests from running
+                            unstable('Could not read the QA plan sheet (see the error above); running the tests anyway')
                         }
                     }
                 }
